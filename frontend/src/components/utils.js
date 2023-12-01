@@ -29,7 +29,7 @@ function removeArrayElement(array, element) {
   array.splice(array.indexOf(element), 1);
 }
 
-function jsonToMermaid(in_json, highlightedType, highlightedIdString) {
+function jsonToMermaid(in_json, highlightedType, highlightedIdString, orphans) {
   // function to convert the JSON response from a GET request to the /cases/id
   // API endpoint, into the markdown string required for Mermaid to render a flowchart.
   // Nodes in the flowchart will be named [TypeName]_[ID]
@@ -86,7 +86,7 @@ function jsonToMermaid(in_json, highlightedType, highlightedIdString) {
       outputmd += "\nclass " + node + " classLevel" + obj.level + ";\n";
     }
 
-    if(highlightedType === type && highlightedIdString === obj.id.toString()){
+    if (highlightedType === type && highlightedIdString === obj.id.toString()) {
       outputmd += "\nclass " + getNodeName(type, obj.id) + " classHighlighted;\n";
     }
 
@@ -148,6 +148,21 @@ function jsonToMermaid(in_json, highlightedType, highlightedIdString) {
   });
   // call the recursive addTree function, starting with the Goal as the top node
   outputmd = addTree("TopLevelNormativeGoal", in_json, null, outputmd, []);
+
+  if (orphans.length > 0) {
+    outputmd += "subgraph Unconnected items\n";
+
+    orphans.forEach((node) => {
+      // node type is always set for orphans
+      let thisType = configData.navigation[node.type]["db_name"];
+      const fakeParent = {};
+      fakeParent[thisType] = [node];
+      outputmd = addTree(node.type, fakeParent, null, outputmd, []);
+    });
+
+    outputmd += "end\n";
+  }
+
   // output the length of the Mermaid string
   return outputmd;
 }
@@ -176,6 +191,34 @@ async function getSelfUser() {
   return user;
 }
 
+/**
+ * Make a mutable copy of a case item, and run a callback to mutate the new copy
+ * @param {*} caseItem root case item
+ * @param {(caseItem: any, type: string) => void} callback function to run at every step of the tree
+ * @returns
+ */
+function visitCaseItem(caseItem, callback, itemType = "TopLevelNormativeGoal") {
+  if (typeof caseItem != "object") {
+    return caseItem;
+  }
+
+  // make a shallow copy
+  var copy = { ...caseItem };
+
+  configData.navigation[itemType]["children"].forEach((childName, j) => {
+    let childType = configData.navigation[itemType]["children"][j];
+    let dbName = configData.navigation[childName]["db_name"];
+    // recurse to make deep copies of the child arrays, if they exist
+    if (Array.isArray(copy[dbName])) {
+      copy[dbName] = copy[dbName].map((g) => visitCaseItem(g, callback, childType));
+    }
+  })
+
+  callback(copy, itemType);
+
+  return copy;
+}
+
 export {
   getBaseURL,
   getClientID,
@@ -186,4 +229,5 @@ export {
   sanitizeForMermaid,
   splitCommaSeparatedString,
   getSelfUser,
+  visitCaseItem,
 };

@@ -30,6 +30,7 @@ import {
   getBaseURL,
   jsonToMermaid,
   getSelfUser,
+  visitCaseItem,
 } from "./utils.js";
 import configData from "../config.json";
 import "./CaseContainer.css";
@@ -60,6 +61,7 @@ class CaseContainer extends Component {
       // these aren't perfectly in-sync with itemId and itemType
       selectedId: null,
       selectedType: null,
+      tempOrphans: [],
       metadata: null,
     };
 
@@ -232,6 +234,37 @@ class CaseContainer extends Component {
     }
   }
 
+  storeOrphans(originalCase, deletedNode) {
+    const deletedId = deletedNode.id;
+    const deletedType = deletedNode.type;
+    const parentIdName = configData.navigation[deletedType].id_name;
+    originalCase.goals.forEach((goal) => {
+      visitCaseItem(goal, (item, type) => {
+        // some case objects are missing their type
+        // set it so orphans can be rendered
+        item.type = type;
+
+        if (item.type === deletedType && item.id === deletedId) {
+          // this was the deleted node
+          return;
+        }
+        if (item[parentIdName] === deletedId) {
+          // this is an orphaned node
+          item[parentIdName] = null;
+          this.setState({ tempOrphans: [...this.state.tempOrphans, item] });
+        } else if (Array.isArray(item[parentIdName]) && item[parentIdName].includes(deletedId) && item[parentIdName].length === 1){
+          // this is an orphaned evidence node
+          item[parentIdName] = [];
+          this.setState({ tempOrphans: [...this.state.tempOrphans, item] });
+        }
+
+        // this may be a child of an orphan node
+        // if it isn't, its a copy and will be discarded
+        item.id = "T-" + item.id;
+      });
+    });
+  }
+
   updateView() {
     // render() will be called again anytime setState is called, which
     // is done both by hideEditLayer() and hideCreateLayer()
@@ -247,7 +280,7 @@ class CaseContainer extends Component {
       let itemType = chunks[0];
       let itemId = chunks[1];
       this.setState({ itemType: itemType, itemId: itemId });
-      this.setState({ selectedType: itemType, selectedId: itemId })
+      this.setState({ selectedType: itemType, selectedId: itemId });
       if (this.inEditMode()) {
         this.showEditLayer(itemType, itemId);
       } else {
@@ -364,6 +397,8 @@ class CaseContainer extends Component {
           caseId={this.state.assurance_case.id}
           createItemLayer={this.showCreateLayer.bind(this)}
           updateView={this.updateView.bind(this)}
+          case={this.state.assurance_case}
+          storeOrphans={this.storeOrphans.bind(this)}
         />
       </Box>
     );
@@ -528,7 +563,7 @@ class CaseContainer extends Component {
             childType,
             this.state.itemId,
             this.state.itemType,
-            e,
+            e
           )
         }
         label={"Create " + childType}
@@ -543,7 +578,7 @@ class CaseContainer extends Component {
         {this.state.itemType &&
           this.state.itemId &&
           configData.navigation[this.state.itemType]["children"].map(
-            this.getCreateSubItemButton.bind(this),
+            this.getCreateSubItemButton.bind(this)
           )}
       </Box>
     );
@@ -604,7 +639,12 @@ class CaseContainer extends Component {
       window.location.replace("/login");
       return null;
     } else {
-      const markdown = this.constructMarkdownMemoised(this.state.assurance_case, this.state.selectedType, this.state.selectedId);
+      const markdown = this.constructMarkdownMemoised(
+        this.state.assurance_case,
+        this.state.selectedType,
+        this.state.selectedId,
+        this.state.tempOrphans
+      );
 
       return (
         <Box fill>

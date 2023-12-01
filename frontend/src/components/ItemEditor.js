@@ -46,7 +46,10 @@ function ItemEditor(props) {
   }, [props.id, props.type]);
 
   function handleDelete(event) {
-    deleteDBObject().then((resolve) => props.updateView());
+    deleteDBObject().then((resolve) => {
+      props.storeOrphans(props.case, items)
+      props.updateView();
+    });
   }
 
   async function deleteDBObject() {
